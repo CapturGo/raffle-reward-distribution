@@ -2,22 +2,7 @@ name: Devnet Reward Test
 
 on:
   workflow_dispatch:
-    inputs:
-      amount:
-        description: Devnet token amount to send to each winner
-        required: true
-        default: "0.01"
-      iterations:
-        description: Number of times to run the test payout
-        required: true
-        default: "1"
-      interval_seconds:
-        description: Seconds to wait between iterations
-        required: true
-        default: "120"
   schedule:
-    # GitHub Actions scheduled workflows are not reliable at 2-minute intervals.
-    # This runs every 10 minutes and loops 5 times with 120 seconds between runs.
     - cron: "*/10 * * * *"
 
 concurrency:
@@ -57,21 +42,4 @@ jobs:
         run: npm ci
 
       - name: Send devnet rewards
-        env:
-          AMOUNT: ${{ github.event.inputs.amount || '0.01' }}
-          ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
-          INTERVAL_SECONDS: ${{ github.event.inputs.interval_seconds || '120' }}
-        run: |
-          set -euo pipefail
-
-          echo "Sending ${AMOUNT} devnet token(s) to each winner."
-          echo "Iterations: ${ITERATIONS}; interval: ${INTERVAL_SECONDS}s"
-
-          for run_number in $(seq 1 "${ITERATIONS}"); do
-            echo "Starting devnet reward test iteration ${run_number}/${ITERATIONS}"
-            npm run distribute:devnet -- --yes --amount "${AMOUNT}"
-
-            if [ "${run_number}" -lt "${ITERATIONS}" ]; then
-              sleep "${INTERVAL_SECONDS}"
-            fi
-          done
+        run: npm run distribute:devnet -- --yes --amount 0.01

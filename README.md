@@ -97,15 +97,6 @@ To deploy with a different env file:
 npm run deploy:docker -- --env-file /secure/path/reward-backend.env
 ```
 
-### GitHub Actions Deploy
-
-The workflow at `.github/workflows/deploy-backend.yml` runs the deploy script whenever `main` is pushed. It expects:
-
-- Docker and Docker Compose v2 available on the runner.
-- A GitHub Actions secret named `REWARD_BACKEND_ENV` containing the full `.env` file contents.
-
-This workflow currently uses `ubuntu-latest`. That is useful for testing the Docker deploy script, but it does not keep a real backend deployed after the job ends because GitHub-hosted runners are temporary.
-
 ## Commands
 
 Preview the latest draw and pending payouts. This resolves winner wallets and prints the payout plan, but does not send transactions or patch settlements:
@@ -145,9 +136,9 @@ Devnet distribution uses `DEVNET_SOLANA_RPC_URL`, `DEVNET_SOLANA_PRIVATE_KEY`, `
 
 ### Scheduled Devnet Test
 
-The workflow at `.github/workflows/devnet-reward-test.yml` can send `0.01` devnet USDC to each pending winner for testing. It can be run manually from GitHub Actions, and it is also scheduled every 10 minutes with five 120-second iterations because GitHub cron is not reliable at true 2-minute intervals.
+The workflow at `.github/workflows/devnet-reward-test.yml` sends `0.01` devnet USDC to each pending winner every 10 minutes. It fetches the current campaign's latest draw, resolves winner wallets, sends devnet tokens, and never patches CapturGo settlement status.
 
-For a manual test, open GitHub Actions, choose **Devnet Reward Test**, click **Run workflow**, and set `iterations` to how many 2-minute cycles you want.
+For a manual test, open GitHub Actions, choose **Devnet Reward Test**, and click **Run workflow**.
 
 Required GitHub Secrets:
 
