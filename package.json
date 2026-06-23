@@ -8,6 +8,8 @@
     "start": "next start",
     "plan": "node scripts/distribute-rewards.mjs plan",
     "distribute": "node scripts/distribute-rewards.mjs distribute",
+    "plan:devnet": "node scripts/distribute-rewards.mjs plan --devnet",
+    "distribute:devnet": "node scripts/distribute-rewards.mjs distribute --devnet",
     "deploy:docker": "bash scripts/deploy-backend.sh",
     "generate-wallet": "node scripts/generate-solana-wallet.mjs"
   },

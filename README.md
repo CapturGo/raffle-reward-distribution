@@ -127,6 +127,13 @@ Send direct transfers and update the API:
 npm run distribute -- --yes
 ```
 
+Test with devnet USDC without updating CapturGo settlement status:
+
+```bash
+npm run plan:devnet -- --amount 0.01
+npm run distribute:devnet -- --yes --amount 0.01
+```
+
 Live distribution does this for each pending winner:
 
 1. Resolve Solana payout address from `seekerWallet`, then Privy email lookup.
@@ -134,6 +141,8 @@ Live distribution does this for each pending winner:
 3. Send token reward from `REWARD_SOLANA_PRIVATE_KEY`.
 4. Patch CapturGo settlement status to `SETTLED` with the Solana transaction hash.
 5. Write an append-only local ledger entry under `artifacts/`.
+
+Devnet distribution uses `DEVNET_SOLANA_RPC_URL`, `DEVNET_SOLANA_PRIVATE_KEY`, `DEVNET_TOKEN_ADDRESS`, `DEVNET_TOKEN_DECIMALS`, and `DEVNET_TOKEN_SYMBOL`. It still fetches the real draw and resolves real winner wallets, but sends devnet tokens only and never patches CapturGo settlement status.
 
 ## Safety Notes
 

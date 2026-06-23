@@ -48,12 +48,16 @@ main().catch((error) => {
 async function main() {
   const token = requiredEnv('CAPTURGO_ADMIN_BEARER_TOKEN');
   const campaignId = args.campaignId || env('CAPTURGO_RAFFLE_CAMPAIGN_ID') || defaultCampaignId;
+  const isDevnet = args.network === 'devnet';
+  const tokenConfig = getTokenConfig(isDevnet);
   const draw = args.drawId
     ? { id: args.drawId, campaignId, status: 'provided' }
     : await getLatestDraw(token, campaignId);
 
   console.log(`Draw: ${draw.id}`);
   console.log(`Campaign: ${campaignId}`);
+  console.log(`Network: ${isDevnet ? 'devnet test mode' : 'mainnet production mode'}`);
+  if (isDevnet) console.log('Devnet mode never patches CapturGo settlement status.');
 
   const winners = await getWinners(token, draw.id);
   const pendingWinners = winners.filter((winner) => {
@@ -70,11 +74,9 @@ async function main() {
   const payouts = [];
   const skipped = [];
   let requiredBalance = 0n;
-  const tokenDecimals = numberEnv('REWARD_TOKEN_DECIMALS', 6);
-  const tokenSymbol = env('REWARD_TOKEN_SYMBOL') ?? 'USDC';
 
   for (const winner of pendingWinners) {
-    const prizeAmount = String(winner.prizeAmount ?? '').trim();
+    const prizeAmount = args.amount || String(winner.prizeAmount ?? '').trim();
     const wallet = await resolveWinnerWallet(winner);
 
     if (!wallet) {
@@ -86,7 +88,7 @@ async function main() {
       continue;
     }
 
-    requiredBalance += parseTokenAmount(prizeAmount, tokenDecimals, tokenSymbol);
+    requiredBalance += parseTokenAmount(prizeAmount, tokenConfig.tokenDecimals, tokenConfig.tokenSymbol);
     payouts.push({
       winnerId: winner.id,
       email: winner.email ?? '',
@@ -97,7 +99,7 @@ async function main() {
     });
   }
 
-  printPlan(payouts, skipped, requiredBalance, tokenDecimals, tokenSymbol);
+  printPlan(payouts, skipped, requiredBalance, tokenConfig.tokenDecimals, tokenConfig.tokenSymbol);
 
   if (args.command === 'plan' || args.dryRun) {
     console.log('Dry run only. No transactions or settlement API updates were sent.');
@@ -109,7 +111,7 @@ async function main() {
   }
 
   if (!args.yes) {
-    throw new Error('Live reward distribution requires --yes');
+    throw new Error(`${isDevnet ? 'Devnet test distribution' : 'Live reward distribution'} requires --yes`);
   }
 
   if (payouts.length === 0) {
@@ -117,16 +119,16 @@ async function main() {
     return;
   }
 
-  const solana = createSolanaClient({ tokenDecimals, tokenSymbol });
+  const solana = createSolanaClient(tokenConfig);
   const availableBalance = await solana.getTokenBalance();
   if (availableBalance < requiredBalance) {
     throw new Error(
-      `Insufficient ${tokenSymbol} balance. Need ${formatTokenAmount(requiredBalance, tokenDecimals)} ${tokenSymbol}, available ${formatTokenAmount(availableBalance, tokenDecimals)} ${tokenSymbol}.`,
+      `Insufficient ${tokenConfig.tokenSymbol} balance. Need ${formatTokenAmount(requiredBalance, tokenConfig.tokenDecimals)} ${tokenConfig.tokenSymbol}, available ${formatTokenAmount(availableBalance, tokenConfig.tokenDecimals)} ${tokenConfig.tokenSymbol}.`,
     );
   }
 
   console.log(`Funding wallet: ${solana.fundingAddress()}`);
-  console.log(`Starting live distribution for ${payouts.length} payout(s).`);
+  console.log(`Starting ${isDevnet ? 'devnet test' : 'live'} distribution for ${payouts.length} payout(s).`);
 
   let settled = 0;
   let failed = 0;
@@ -134,29 +136,34 @@ async function main() {
   for (const payout of payouts) {
     let txHash = '';
     try {
-      await updateSettlement(token, payout.winnerId, 'PROCESSING');
-      await appendLedger({ event: 'processing', drawId: draw.id, ...payout });
+      if (!isDevnet) {
+        await updateSettlement(token, payout.winnerId, 'PROCESSING');
+        await appendLedger({ event: 'processing', network: args.network, drawId: draw.id, ...payout });
+      }
 
-      console.log(`Sending ${payout.prizeAmount} ${tokenSymbol} to ${mask(payout.wallet)} (${payout.winnerId})`);
+      console.log(`Sending ${payout.prizeAmount} ${tokenConfig.tokenSymbol} to ${mask(payout.wallet)} (${payout.winnerId})`);
       txHash = await solana.sendToken(payout.wallet, payout.prizeAmount);
-      await appendLedger({ event: 'sent', drawId: draw.id, txHash, ...payout });
+      await appendLedger({ event: 'sent', network: args.network, drawId: draw.id, txHash, ...payout });
 
-      await updateSettlement(token, payout.winnerId, 'SETTLED', txHash);
-      await appendLedger({ event: 'settled', drawId: draw.id, txHash, ...payout });
+      if (!isDevnet) {
+        await updateSettlement(token, payout.winnerId, 'SETTLED', txHash);
+        await appendLedger({ event: 'settled', network: args.network, drawId: draw.id, txHash, ...payout });
+      }
       settled += 1;
-      console.log(`Settled ${payout.winnerId}: ${txHash}`);
+      console.log(`${isDevnet ? 'Devnet test sent' : 'Settled'} ${payout.winnerId}: ${txHash}`);
     } catch (error) {
       failed += 1;
       const message = error instanceof Error ? error.message : String(error);
 
       if (txHash) {
-        console.error(`Transaction was sent but settlement patch failed for ${payout.winnerId}: ${message}`);
-        console.error(`Manual follow-up required. txHash=${txHash}`);
-        await appendLedger({ event: 'settlement_patch_failed', drawId: draw.id, txHash, error: message, ...payout });
+        const event = isDevnet ? 'post_send_failed' : 'settlement_patch_failed';
+        console.error(`Transaction was sent but ${isDevnet ? 'post-send handling' : 'settlement patch'} failed for ${payout.winnerId}: ${message}`);
+        console.error(`Manual follow-up may be required. txHash=${txHash}`);
+        await appendLedger({ event, network: args.network, drawId: draw.id, txHash, error: message, ...payout });
       } else {
         console.error(`Failed ${payout.winnerId}: ${message}`);
-        await updateSettlement(token, payout.winnerId, 'FAILED').catch(() => {});
-        await appendLedger({ event: 'failed', drawId: draw.id, error: message, ...payout });
+        if (!isDevnet) await updateSettlement(token, payout.winnerId, 'FAILED').catch(() => {});
+        await appendLedger({ event: 'failed', network: args.network, drawId: draw.id, error: message, ...payout });
       }
 
       if (args.failFast) throw error;
@@ -171,6 +178,8 @@ function parseArgs(argv) {
     command: '',
     drawId: '',
     campaignId: '',
+    network: 'mainnet',
+    amount: '',
     dryRun: false,
     yes: false,
     includeSettled: false,
@@ -184,6 +193,9 @@ function parseArgs(argv) {
     if (commands.has(arg) && !parsed.command) parsed.command = arg;
     else if (arg === '--draw-id') parsed.drawId = requireArgValue(argv, ++index, arg);
     else if (arg === '--campaign-id') parsed.campaignId = requireArgValue(argv, ++index, arg);
+    else if (arg === '--network') parsed.network = parseNetwork(requireArgValue(argv, ++index, arg));
+    else if (arg === '--devnet') parsed.network = 'devnet';
+    else if (arg === '--amount') parsed.amount = normalizeAmount(requireArgValue(argv, ++index, arg));
     else if (arg === '--dry-run') parsed.dryRun = true;
     else if (arg === '--yes') parsed.yes = true;
     else if (arg === '--include-settled') parsed.includeSettled = true;
@@ -201,17 +213,38 @@ function requireArgValue(argv, index, flag) {
   return value;
 }
 
+function parseNetwork(value) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'mainnet' || normalized === 'devnet') return normalized;
+  throw new Error('--network must be mainnet or devnet');
+}
+
+function normalizeAmount(value) {
+  const amount = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(amount) || Number(amount) <= 0) {
+    throw new Error('--amount must be a positive number');
+  }
+  return amount;
+}
+
 function usage() {
   console.log(`Usage:
   npm run plan -- [--draw-id <id>] [--campaign-id <id>] [--include-settled]
   npm run distribute -- [--draw-id <id>] [--campaign-id <id>] [--dry-run]
   npm run distribute -- --yes [--draw-id <id>] [--campaign-id <id>] [--fail-fast]
+  npm run plan:devnet -- [--draw-id <id>] [--amount <amount>]
+  npm run distribute:devnet -- --yes [--draw-id <id>] [--amount <amount>]
 
 What it does:
   1. Fetches raffle winners from CapturGo.
   2. Resolves each winner's Solana wallet from seekerWallet, then Privy email lookup.
   3. Sends token rewards from REWARD_SOLANA_PRIVATE_KEY.
   4. Patches CapturGo settlement status to PROCESSING, then SETTLED with txHash.
+
+Devnet mode:
+  Uses DEVNET_SOLANA_PRIVATE_KEY, DEVNET_SOLANA_RPC_URL, DEVNET_TOKEN_ADDRESS,
+  DEVNET_TOKEN_DECIMALS, and DEVNET_TOKEN_SYMBOL. It sends devnet tokens only
+  and never patches CapturGo settlement status.
 `);
 }
 
@@ -287,10 +320,35 @@ async function resolveWinnerWallet(winner) {
   return address && isValidSolanaAddress(address) ? { address, source: 'privy' } : null;
 }
 
-function createSolanaClient({ tokenDecimals, tokenSymbol }) {
-  const connection = new Connection(requiredEnv('REWARD_SOLANA_RPC_URL'), 'confirmed');
-  const keypair = loadKeypair(requiredEnv('REWARD_SOLANA_PRIVATE_KEY'));
-  const mint = new PublicKey(env('REWARD_TOKEN_ADDRESS') ?? 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+function getTokenConfig(isDevnet) {
+  if (isDevnet) {
+    return {
+      network: 'devnet',
+      rpcUrl: env('DEVNET_SOLANA_RPC_URL') ?? 'https://api.devnet.solana.com',
+      privateKey: env('DEVNET_SOLANA_PRIVATE_KEY') || env('REWARD_SOLANA_PRIVATE_KEY'),
+      tokenAddress: env('DEVNET_TOKEN_ADDRESS') ?? '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+      tokenDecimals: numberEnv('DEVNET_TOKEN_DECIMALS', 6),
+      tokenSymbol: env('DEVNET_TOKEN_SYMBOL') ?? 'USDC-devnet',
+    };
+  }
+
+  return {
+    network: 'mainnet',
+    rpcUrl: env('REWARD_SOLANA_RPC_URL'),
+    privateKey: env('REWARD_SOLANA_PRIVATE_KEY'),
+    tokenAddress: env('REWARD_TOKEN_ADDRESS') ?? 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    tokenDecimals: numberEnv('REWARD_TOKEN_DECIMALS', 6),
+    tokenSymbol: env('REWARD_TOKEN_SYMBOL') ?? 'USDC',
+  };
+}
+
+function createSolanaClient(config) {
+  if (!config.privateKey) throw new Error(`Missing ${config.network === 'devnet' ? 'DEVNET_SOLANA_PRIVATE_KEY or REWARD_SOLANA_PRIVATE_KEY' : 'REWARD_SOLANA_PRIVATE_KEY'}`);
+
+  const connection = new Connection(config.rpcUrl, 'confirmed');
+  const keypair = loadKeypair(config.privateKey);
+  const mint = new PublicKey(config.tokenAddress);
+  const { tokenDecimals, tokenSymbol } = config;
 
   return {
     fundingAddress: () => keypair.publicKey.toBase58(),
