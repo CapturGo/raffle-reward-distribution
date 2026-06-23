@@ -2,7 +2,7 @@
 
 Standalone utility for settling raffle winners. It is intentionally separate from the Sui proof work and from the mobile app.
 
-This expects the winners endpoint to return Rahul's updated payload with `id`, `email`, `seekerWallet`, `prizeAmount`, and `settlementStatus`.
+This expects the winners endpoint to return Rahul's updated payload with `id`, `prizeAmount`, `settlementStatus`, and at least one payout resolver field: `seekerWallet`, `walletAddress`, or `email`.
 
 ## Flow
 
@@ -12,7 +12,7 @@ This expects the winners endpoint to return Rahul's updated payload with `id`, `
 4. Send Solana USDC transfers from the funding wallet.
 5. Patch each winner with `PATCH /api/v1/raffles/winners/{winnerId}/settlement` using `{ "status": "SETTLED", "txHash": "<solana-signature>" }`.
 
-Live distribution marks a winner `PROCESSING` before broadcasting and patches `SETTLED` after the transaction is confirmed. Payout address resolution uses a valid `seekerWallet` first; if `seekerWallet` is missing or invalid, it looks up the user's Solana wallet in Privy by `email`.
+Live distribution marks a winner `PROCESSING` before broadcasting and patches `SETTLED` after the transaction is confirmed. Payout address resolution uses a valid `seekerWallet` first, then `walletAddress`; if both are missing or invalid, it looks up the user's Solana wallet in Privy by `email`.
 
 ## Setup
 
@@ -146,7 +146,7 @@ npm run distribute:devnet -- --yes --amount 0.01
 
 Live distribution does this for each pending winner:
 
-1. Resolve Solana payout address from `seekerWallet`, then Privy email lookup.
+1. Resolve Solana payout address from `seekerWallet`, `walletAddress`, then Privy email lookup.
 2. Patch CapturGo settlement status to `PROCESSING`.
 3. Send token reward from `REWARD_SOLANA_PRIVATE_KEY`.
 4. Patch CapturGo settlement status to `SETTLED` with the Solana transaction hash.
@@ -158,5 +158,6 @@ Devnet distribution uses `DEVNET_SOLANA_RPC_URL`, `DEVNET_SOLANA_PRIVATE_KEY`, `
 
 - Live transfer refuses to run without `--yes`.
 - Winners whose `settlementStatus` is not `PENDING` are skipped by default.
+- Pending winners without a valid payout wallet make live distribution fail before any transfer is sent.
 - `artifacts/ledger-*.jsonl` is append-only and records the local attempt status.
 - If a transfer succeeds but the final API patch fails, the script prints the tx hash and records `settlement_patch_failed` in the ledger for manual follow-up.

@@ -28,6 +28,7 @@ jobs:
       REWARD_TOKEN_ADDRESS: ${{ secrets.REWARD_TOKEN_ADDRESS }}
       REWARD_TOKEN_DECIMALS: ${{ secrets.REWARD_TOKEN_DECIMALS }}
       REWARD_TOKEN_SYMBOL: ${{ secrets.REWARD_TOKEN_SYMBOL }}
+      REWARD_FAIL_FAST: "true"
 
     steps:
       - name: Checkout code

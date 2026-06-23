@@ -87,7 +87,7 @@ async function main() {
       skipped.push({
         winnerId: winner.id,
         email: winner.email ?? '',
-        reason: 'No valid seekerWallet or Privy Solana wallet found',
+        reason: 'No valid seekerWallet, walletAddress, or Privy Solana wallet found',
       });
       continue;
     }
@@ -119,8 +119,15 @@ async function main() {
   }
 
   if (payouts.length === 0) {
-    console.log('No payable winners after wallet resolution.');
-    return;
+    throw new Error(
+      `No payable winners after wallet resolution. ${skipped.length} pending winner(s) need seekerWallet, walletAddress, or email for Privy lookup before rewards can be sent.`,
+    );
+  }
+
+  if (args.failFast && skipped.length > 0) {
+    throw new Error(
+      `${skipped.length} pending winner(s) are missing payout wallets. Refusing partial distribution because fail-fast is enabled.`,
+    );
   }
 
   const solana = createSolanaClient(tokenConfig);
@@ -188,7 +195,7 @@ function parseArgs(argv) {
     dryRun: false,
     yes: false,
     includeSettled: false,
-    failFast: false,
+    failFast: booleanEnv('REWARD_FAIL_FAST', false),
     help: false,
   };
 
@@ -250,7 +257,7 @@ function usage() {
 What it does:
   1. Selects the latest completed weekly draw whose period ended before Monday 00:00 ICT.
   2. Fetches raffle winners from CapturGo.
-  3. Resolves each winner's Solana wallet from seekerWallet, then Privy email lookup.
+  3. Resolves each winner's Solana wallet from seekerWallet, walletAddress, then Privy email lookup.
   4. Sends token rewards from REWARD_SOLANA_PRIVATE_KEY.
   5. Patches CapturGo settlement status to PROCESSING, then SETTLED with txHash.
 
@@ -366,6 +373,11 @@ async function resolveWinnerWallet(winner) {
   const seekerWallet = winner.seekerWallet?.trim();
   if (seekerWallet && isValidSolanaAddress(seekerWallet)) {
     return { address: seekerWallet, source: 'seekerWallet' };
+  }
+
+  const walletAddress = winner.walletAddress?.trim();
+  if (walletAddress && isValidSolanaAddress(walletAddress)) {
+    return { address: walletAddress, source: 'walletAddress' };
   }
 
   const email = winner.email?.trim();
@@ -536,6 +548,14 @@ function numberEnv(key, fallback) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`${key} must be a number`);
   return parsed;
+}
+
+function booleanEnv(key, fallback) {
+  const value = env(key);
+  if (!value) return fallback;
+  if (['1', 'true', 'yes', 'on'].includes(value.toLowerCase())) return true;
+  if (['0', 'false', 'no', 'off'].includes(value.toLowerCase())) return false;
+  throw new Error(`${key} must be true or false`);
 }
 
 function requiredEnv(key) {
