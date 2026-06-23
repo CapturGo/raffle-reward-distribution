@@ -6,10 +6,11 @@ This expects the winners endpoint to return Rahul's updated payload with `id`, `
 
 ## Flow
 
-1. Fetch the latest completed draw with `GET /api/v1/raffles/draws?limit=1&campaignId=<campaignId>`.
-2. Fetch draw winners with `GET /api/v1/raffles/draws/{drawId}/winners`.
-3. Send Solana USDC transfers from the funding wallet.
-4. Patch each winner with `PATCH /api/v1/raffles/winners/{winnerId}/settlement` using `{ "status": "SETTLED", "txHash": "<solana-signature>" }`.
+1. Fetch recent draws with `GET /api/v1/raffles/draws?limit=20&campaignId=<campaignId>`.
+2. Select the latest `COMPLETED` weekly draw whose period ended before Monday 00:00 ICT.
+3. Fetch draw winners with `GET /api/v1/raffles/draws/{drawId}/winners`.
+4. Send Solana USDC transfers from the funding wallet.
+5. Patch each winner with `PATCH /api/v1/raffles/winners/{winnerId}/settlement` using `{ "status": "SETTLED", "txHash": "<solana-signature>" }`.
 
 Live distribution marks a winner `PROCESSING` before broadcasting and patches `SETTLED` after the transaction is confirmed. Payout address resolution uses a valid `seekerWallet` first; if `seekerWallet` is missing or invalid, it looks up the user's Solana wallet in Privy by `email`.
 
@@ -99,7 +100,7 @@ npm run deploy:docker -- --env-file /secure/path/reward-backend.env
 
 ## Commands
 
-Preview the latest draw and pending payouts. This resolves winner wallets and prints the payout plan, but does not send transactions or patch settlements:
+Preview the latest completed weekly draw and pending payouts. The week starts Monday 00:00 ICT. This resolves winner wallets and prints the payout plan, but does not send transactions or patch settlements:
 
 ```bash
 npm run plan
@@ -133,27 +134,6 @@ Live distribution does this for each pending winner:
 5. Write an append-only local ledger entry under `artifacts/`.
 
 Devnet distribution uses `DEVNET_SOLANA_RPC_URL`, `DEVNET_SOLANA_PRIVATE_KEY`, `DEVNET_TOKEN_ADDRESS`, `DEVNET_TOKEN_DECIMALS`, and `DEVNET_TOKEN_SYMBOL`. It still fetches the real draw and resolves real winner wallets, but sends devnet tokens only and never patches CapturGo settlement status.
-
-### Scheduled Devnet Test
-
-The workflow at `.github/workflows/devnet-reward-test.yml` sends `0.01` devnet USDC to each pending winner every 10 minutes. It fetches the current campaign's latest draw, resolves winner wallets, sends devnet tokens, and never patches CapturGo settlement status.
-
-For a manual test, open GitHub Actions, choose **Devnet Reward Test**, and click **Run workflow**.
-
-Required GitHub Secrets:
-
-- `CAPTURGO_API_BASE_URL`
-- `CAPTURGO_ADMIN_BEARER_TOKEN`
-- `CAPTURGO_RAFFLE_CAMPAIGN_ID`
-- `CAPTURGO_DEVICE_ID`
-- `CAPTURGO_DEVICE_TYPE`
-- `PRIVY_APP_ID`
-- `PRIVY_APP_SECRET`
-- `DEVNET_SOLANA_RPC_URL`
-- `DEVNET_SOLANA_PRIVATE_KEY`
-- `DEVNET_TOKEN_ADDRESS`
-- `DEVNET_TOKEN_DECIMALS`
-- `DEVNET_TOKEN_SYMBOL`
 
 ## Safety Notes
 

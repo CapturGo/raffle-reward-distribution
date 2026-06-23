@@ -24,6 +24,7 @@ import bs58 from 'bs58';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const defaultCampaignId = 'b59966be-20cd-484c-93a3-770295a16c62';
+const ictOffsetMs = 7 * 60 * 60 * 1000;
 const externalEnv = new Set(Object.keys(process.env));
 
 loadDotEnv(path.join(rootDir, '.env'), externalEnv);
@@ -52,10 +53,13 @@ async function main() {
   const tokenConfig = getTokenConfig(isDevnet);
   const draw = args.drawId
     ? { id: args.drawId, campaignId, status: 'provided' }
-    : await getLatestDraw(token, campaignId);
+    : await getWeeklyCompletedDraw(token, campaignId, args.drawLimit);
 
   console.log(`Draw: ${draw.id}`);
   console.log(`Campaign: ${campaignId}`);
+  console.log(`Draw status: ${draw.status ?? 'unknown'}`);
+  if (draw.periodStart) console.log(`Draw period start: ${draw.periodStart}`);
+  if (draw.periodEnd) console.log(`Draw period end: ${draw.periodEnd}`);
   console.log(`Network: ${isDevnet ? 'devnet test mode' : 'mainnet production mode'}`);
   if (isDevnet) console.log('Devnet mode never patches CapturGo settlement status.');
 
@@ -180,6 +184,7 @@ function parseArgs(argv) {
     campaignId: '',
     network: 'mainnet',
     amount: '',
+    drawLimit: 20,
     dryRun: false,
     yes: false,
     includeSettled: false,
@@ -193,6 +198,7 @@ function parseArgs(argv) {
     if (commands.has(arg) && !parsed.command) parsed.command = arg;
     else if (arg === '--draw-id') parsed.drawId = requireArgValue(argv, ++index, arg);
     else if (arg === '--campaign-id') parsed.campaignId = requireArgValue(argv, ++index, arg);
+    else if (arg === '--draw-limit') parsed.drawLimit = normalizePositiveInteger(requireArgValue(argv, ++index, arg), arg);
     else if (arg === '--network') parsed.network = parseNetwork(requireArgValue(argv, ++index, arg));
     else if (arg === '--devnet') parsed.network = 'devnet';
     else if (arg === '--amount') parsed.amount = normalizeAmount(requireArgValue(argv, ++index, arg));
@@ -227,19 +233,26 @@ function normalizeAmount(value) {
   return amount;
 }
 
+function normalizePositiveInteger(value, flag) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${flag} must be a positive integer`);
+  return parsed;
+}
+
 function usage() {
   console.log(`Usage:
-  npm run plan -- [--draw-id <id>] [--campaign-id <id>] [--include-settled]
-  npm run distribute -- [--draw-id <id>] [--campaign-id <id>] [--dry-run]
-  npm run distribute -- --yes [--draw-id <id>] [--campaign-id <id>] [--fail-fast]
+  npm run plan -- [--draw-id <id>] [--campaign-id <id>] [--draw-limit <n>] [--include-settled]
+  npm run distribute -- [--draw-id <id>] [--campaign-id <id>] [--draw-limit <n>] [--dry-run]
+  npm run distribute -- --yes [--draw-id <id>] [--campaign-id <id>] [--draw-limit <n>] [--fail-fast]
   npm run plan:devnet -- [--draw-id <id>] [--amount <amount>]
   npm run distribute:devnet -- --yes [--draw-id <id>] [--amount <amount>]
 
 What it does:
-  1. Fetches raffle winners from CapturGo.
-  2. Resolves each winner's Solana wallet from seekerWallet, then Privy email lookup.
-  3. Sends token rewards from REWARD_SOLANA_PRIVATE_KEY.
-  4. Patches CapturGo settlement status to PROCESSING, then SETTLED with txHash.
+  1. Selects the latest completed weekly draw whose period ended before Monday 00:00 ICT.
+  2. Fetches raffle winners from CapturGo.
+  3. Resolves each winner's Solana wallet from seekerWallet, then Privy email lookup.
+  4. Sends token rewards from REWARD_SOLANA_PRIVATE_KEY.
+  5. Patches CapturGo settlement status to PROCESSING, then SETTLED with txHash.
 
 Devnet mode:
   Uses DEVNET_SOLANA_PRIVATE_KEY, DEVNET_SOLANA_RPC_URL, DEVNET_TOKEN_ADDRESS,
@@ -248,16 +261,67 @@ Devnet mode:
 `);
 }
 
-async function getLatestDraw(token, campaignId) {
-  const params = new URLSearchParams({ limit: '1', campaignId });
-  const draws = await apiRequest(token, `/api/v1/raffles/draws?${params}`);
-  const draw = draws[0];
-  if (!draw) throw new Error('No draw returned by CapturGo API');
-  return draw;
+async function getWeeklyCompletedDraw(token, campaignId, limit) {
+  const draws = await getDraws(token, campaignId, limit);
+  if (draws.length === 0) throw new Error('No draws returned by CapturGo API');
+
+  const weekStartUtc = getCurrentIctWeekStartUtc(new Date());
+  console.log(`Current weekly payout boundary: ${weekStartUtc.toISOString()} (Monday 00:00 ICT)`);
+
+  const completedDraws = draws
+    .filter(isCompletedDraw)
+    .sort((a, b) => getDrawSortTime(b) - getDrawSortTime(a));
+
+  if (completedDraws.length === 0) {
+    throw new Error(`No completed draws found in the latest ${draws.length} draw(s). Use --draw-id <id> to override.`);
+  }
+
+  const eligibleDraw = completedDraws.find((draw) => getDrawEndTime(draw) < weekStartUtc.getTime());
+  if (eligibleDraw) return eligibleDraw;
+
+  const fallback = completedDraws[0];
+  console.warn('No completed draw ended before the current Monday 00:00 ICT boundary.');
+  console.warn(`Falling back to latest completed draw: ${fallback.id}. Use --draw-id to choose explicitly.`);
+  return fallback;
+}
+
+async function getDraws(token, campaignId, limit) {
+  const params = new URLSearchParams({ limit: String(limit), campaignId });
+  return apiRequest(token, `/api/v1/raffles/draws?${params}`);
 }
 
 async function getWinners(token, drawId) {
   return apiRequest(token, `/api/v1/raffles/draws/${encodeURIComponent(drawId)}/winners`);
+}
+
+function isCompletedDraw(draw) {
+  const status = String(draw.status ?? '').toUpperCase();
+  return status === 'COMPLETED' || status === 'COMPLETE' || status === 'FINISHED' || status === 'CLOSED';
+}
+
+function getDrawEndTime(draw) {
+  return parseDateMs(draw.periodEnd ?? draw.drawDate ?? draw.snapshotTime);
+}
+
+function getDrawSortTime(draw) {
+  return parseDateMs(draw.drawDate ?? draw.periodEnd ?? draw.snapshotTime);
+}
+
+function parseDateMs(value) {
+  const ms = value ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function getCurrentIctWeekStartUtc(now) {
+  const shifted = new Date(now.getTime() + ictOffsetMs);
+  const dayOfWeek = shifted.getUTCDay();
+  const daysSinceMonday = (dayOfWeek + 6) % 7;
+  const localMidnight = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate(),
+  );
+  return new Date(localMidnight - daysSinceMonday * 24 * 60 * 60 * 1000 - ictOffsetMs);
 }
 
 async function updateSettlement(token, winnerId, status, txHash) {
