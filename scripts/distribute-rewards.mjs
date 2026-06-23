@@ -24,8 +24,9 @@ import bs58 from 'bs58';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const defaultCampaignId = 'b59966be-20cd-484c-93a3-770295a16c62';
+const externalEnv = new Set(Object.keys(process.env));
 
-loadDotEnv(path.join(rootDir, '.env'));
+loadDotEnv(path.join(rootDir, '.env'), externalEnv);
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -46,7 +47,7 @@ main().catch((error) => {
 
 async function main() {
   const token = requiredEnv('CAPTURGO_ADMIN_BEARER_TOKEN');
-  const campaignId = args.campaignId ?? env('CAPTURGO_RAFFLE_CAMPAIGN_ID') ?? defaultCampaignId;
+  const campaignId = args.campaignId || env('CAPTURGO_RAFFLE_CAMPAIGN_ID') || defaultCampaignId;
   const draw = args.drawId
     ? { id: args.drawId, campaignId, status: 'provided' }
     : await getLatestDraw(token, campaignId);
@@ -243,10 +244,14 @@ async function apiRequest(token, pathName, init = {}) {
   };
   if (init.body) headers['Content-Type'] = 'application/json';
 
-  const response = await fetch(`${requiredEnv('CAPTURGO_API_BASE_URL').replace(/\/+$/, '')}${pathName}`, {
-    ...init,
-    headers,
-  });
+  const url = `${requiredEnv('CAPTURGO_API_BASE_URL').replace(/\/+$/, '')}${pathName}`;
+  let response;
+  try {
+    response = await fetch(url, { ...init, headers });
+  } catch (error) {
+    const cause = error?.cause instanceof Error ? `: ${error.cause.message}` : '';
+    throw new Error(`Network request failed for ${init.method ?? 'GET'} ${url}${cause}`);
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -422,7 +427,7 @@ function env(key) {
   return value ? value : undefined;
 }
 
-function loadDotEnv(filePath) {
+function loadDotEnv(filePath, externalKeys) {
   if (!existsSync(filePath)) return;
   const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
   for (const line of lines) {
@@ -431,7 +436,7 @@ function loadDotEnv(filePath) {
     const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
     if (!match) continue;
     const [, key, rawValue] = match;
-    if (process.env[key] !== undefined) continue;
+    if (externalKeys.has(key)) continue;
     process.env[key] = rawValue.trim().replace(/^['"]|['"]$/g, '');
   }
 }
