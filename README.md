@@ -97,6 +97,16 @@ To deploy with a different env file:
 npm run deploy:docker -- --env-file /secure/path/reward-backend.env
 ```
 
+### GitHub Actions Deploy
+
+The workflow at `.github/workflows/deploy-backend.yml` runs the deploy script whenever `main` is pushed. It expects:
+
+- A self-hosted GitHub Actions runner installed on the backend server.
+- Docker and Docker Compose v2 installed on that server.
+- A GitHub Actions secret named `REWARD_BACKEND_ENV` containing the full `.env` file contents.
+
+Do not use `ubuntu-latest` for the real deploy unless the workflow SSHes into the backend server. GitHub-hosted runners are temporary, so any container started there disappears when the job ends.
+
 ## Commands
 
 Preview the latest draw and pending payouts:
