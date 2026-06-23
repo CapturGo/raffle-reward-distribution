@@ -6,6 +6,7 @@
     "dev": "next dev --webpack -p 5173",
     "build": "next build",
     "start": "next start",
+    "deploy:docker": "bash scripts/deploy-backend.sh",
     "generate-wallet": "node scripts/generate-solana-wallet.mjs"
   },
   "dependencies": {

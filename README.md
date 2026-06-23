@@ -77,6 +77,26 @@ The Docker image is a Next.js standalone production build. Server secrets such a
 
 `NEXT_PUBLIC_PRIVY_APP_ID` and `NEXT_PUBLIC_CAPTURGO_CAMPAIGN_ID` are browser-exposed values, so Docker passes them as build args. Compose reads them from `.env`; hosted deployments should set them in the build environment.
 
+### Automated Docker Deploy
+
+For a VM or backend server with Docker installed, fill in `.env` and run:
+
+```bash
+npm run deploy:docker
+```
+
+The script validates required env values, builds the Docker image, restarts the `reward-backend` service, and smoke-tests `/` plus `/api/wallet`. To bind a different host port:
+
+```bash
+HOST_PORT=8080 npm run deploy:docker -- --health-url http://127.0.0.1:8080
+```
+
+To deploy with a different env file:
+
+```bash
+npm run deploy:docker -- --env-file /secure/path/reward-backend.env
+```
+
 ## Commands
 
 Preview the latest draw and pending payouts:
