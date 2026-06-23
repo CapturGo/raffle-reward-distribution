@@ -1,0 +1,17 @@
+services:
+  reward-backend:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_PRIVY_APP_ID: ${NEXT_PUBLIC_PRIVY_APP_ID:-cmj5wppqx00y8jo0cl794vgbz}
+        NEXT_PUBLIC_CAPTURGO_CAMPAIGN_ID: ${NEXT_PUBLIC_CAPTURGO_CAMPAIGN_ID:-b59966be-20cd-484c-93a3-770295a16c62}
+    image: capturgo-reward-distribution:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    restart: unless-stopped

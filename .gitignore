@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+!admin-ui/.env.example
+.next/
+artifacts/
+.capturgo-session.json
