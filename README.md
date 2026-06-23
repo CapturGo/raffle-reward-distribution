@@ -100,6 +100,25 @@ npm run deploy:docker -- --env-file /secure/path/reward-backend.env
 
 ## Commands
 
+### GitHub Actions
+
+The workflow at `.github/workflows/weekly-reward-distribution.yml` runs every Monday at 00:10 ICT. It fetches the latest completed weekly draw, previews payouts, then sends rewards with `npm run distribute -- --yes`.
+
+Required GitHub Secrets:
+
+- `CAPTURGO_API_BASE_URL`
+- `CAPTURGO_ADMIN_BEARER_TOKEN`
+- `CAPTURGO_RAFFLE_CAMPAIGN_ID`
+- `CAPTURGO_DEVICE_ID`
+- `CAPTURGO_DEVICE_TYPE`
+- `PRIVY_APP_ID`
+- `PRIVY_APP_SECRET`
+- `REWARD_SOLANA_RPC_URL`
+- `REWARD_SOLANA_PRIVATE_KEY`
+- `REWARD_TOKEN_ADDRESS`
+- `REWARD_TOKEN_DECIMALS`
+- `REWARD_TOKEN_SYMBOL`
+
 Preview the latest completed weekly draw and pending payouts. The week starts Monday 00:00 ICT. This resolves winner wallets and prints the payout plan, but does not send transactions or patch settlements:
 
 ```bash
