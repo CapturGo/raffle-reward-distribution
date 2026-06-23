@@ -101,11 +101,10 @@ npm run deploy:docker -- --env-file /secure/path/reward-backend.env
 
 The workflow at `.github/workflows/deploy-backend.yml` runs the deploy script whenever `main` is pushed. It expects:
 
-- A self-hosted GitHub Actions runner installed on the backend server.
-- Docker and Docker Compose v2 installed on that server.
+- Docker and Docker Compose v2 available on the runner.
 - A GitHub Actions secret named `REWARD_BACKEND_ENV` containing the full `.env` file contents.
 
-Do not use `ubuntu-latest` for the real deploy unless the workflow SSHes into the backend server. GitHub-hosted runners are temporary, so any container started there disappears when the job ends.
+This workflow currently uses `ubuntu-latest`. That is useful for testing the Docker deploy script, but it does not keep a real backend deployed after the job ends because GitHub-hosted runners are temporary.
 
 ## Commands
 
