@@ -109,22 +109,16 @@ Do not use `ubuntu-latest` for the real deploy unless the workflow SSHes into th
 
 ## Commands
 
-Preview the latest draw and pending payouts:
+Preview the latest draw and pending payouts. This resolves winner wallets and prints the payout plan, but does not send transactions or patch settlements:
 
 ```bash
 npm run plan
 ```
 
-Export CSV and JSON manifests for manual payment:
+Preview a specific draw:
 
 ```bash
-npm run export
-```
-
-Export a specific draw:
-
-```bash
-npm run export -- --draw-id 550e8400-e29b-41d4-a716-446655440000
+npm run plan -- --draw-id 550e8400-e29b-41d4-a716-446655440000
 ```
 
 Send direct transfers and update the API:
@@ -133,22 +127,17 @@ Send direct transfers and update the API:
 npm run distribute -- --yes
 ```
 
-Patch settlements from a CSV after manual sending:
+Live distribution does this for each pending winner:
 
-```bash
-npm run settle -- --file artifacts/manual-settlements.csv
-```
-
-The settlement CSV needs these columns:
-
-```csv
-winnerId,txHash,status
-3fa85f64-5717-4562-b3fc-2c963f66afa6,0xabc...,SETTLED
-```
+1. Resolve Solana payout address from `seekerWallet`, then Privy email lookup.
+2. Patch CapturGo settlement status to `PROCESSING`.
+3. Send token reward from `REWARD_SOLANA_PRIVATE_KEY`.
+4. Patch CapturGo settlement status to `SETTLED` with the Solana transaction hash.
+5. Write an append-only local ledger entry under `artifacts/`.
 
 ## Safety Notes
 
 - Live transfer refuses to run without `--yes`.
 - Winners whose `settlementStatus` is not `PENDING` are skipped by default.
 - `artifacts/ledger-*.jsonl` is append-only and records the local attempt status.
-- If a transfer succeeds but the API patch fails, rerun `npm run settle -- --file ...` with the tx hash to complete the DB update.
+- If a transfer succeeds but the final API patch fails, the script prints the tx hash and records `settlement_patch_failed` in the ledger for manual follow-up.

@@ -6,6 +6,8 @@
     "dev": "next dev --webpack -p 5173",
     "build": "next build",
     "start": "next start",
+    "plan": "node scripts/distribute-rewards.mjs plan",
+    "distribute": "node scripts/distribute-rewards.mjs distribute",
     "deploy:docker": "bash scripts/deploy-backend.sh",
     "generate-wallet": "node scripts/generate-solana-wallet.mjs"
   },
