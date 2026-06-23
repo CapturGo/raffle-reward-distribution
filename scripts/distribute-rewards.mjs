@@ -364,7 +364,14 @@ async function apiRequest(token, pathName, init = {}) {
 
   if (response.status === 204) return undefined;
   const text = await response.text();
-  return text ? JSON.parse(text) : undefined;
+  if (!text) return undefined;
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    if ((init.method ?? 'GET').toUpperCase() !== 'GET') return text;
+    throw new Error(`CapturGo GET ${pathName}: invalid JSON response: ${text.slice(0, 120)}`);
+  }
 }
 
 let privyClient = null;
