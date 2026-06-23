@@ -144,6 +144,27 @@ Live distribution does this for each pending winner:
 
 Devnet distribution uses `DEVNET_SOLANA_RPC_URL`, `DEVNET_SOLANA_PRIVATE_KEY`, `DEVNET_TOKEN_ADDRESS`, `DEVNET_TOKEN_DECIMALS`, and `DEVNET_TOKEN_SYMBOL`. It still fetches the real draw and resolves real winner wallets, but sends devnet tokens only and never patches CapturGo settlement status.
 
+### Scheduled Devnet Test
+
+The workflow at `.github/workflows/devnet-reward-test.yml` can send `0.01` devnet USDC to each pending winner for testing. It can be run manually from GitHub Actions, and it is also scheduled every 10 minutes with five 120-second iterations because GitHub cron is not reliable at true 2-minute intervals.
+
+For a manual test, open GitHub Actions, choose **Devnet Reward Test**, click **Run workflow**, and set `iterations` to how many 2-minute cycles you want.
+
+Required GitHub Secrets:
+
+- `CAPTURGO_API_BASE_URL`
+- `CAPTURGO_ADMIN_BEARER_TOKEN`
+- `CAPTURGO_RAFFLE_CAMPAIGN_ID`
+- `CAPTURGO_DEVICE_ID`
+- `CAPTURGO_DEVICE_TYPE`
+- `PRIVY_APP_ID`
+- `PRIVY_APP_SECRET`
+- `DEVNET_SOLANA_RPC_URL`
+- `DEVNET_SOLANA_PRIVATE_KEY`
+- `DEVNET_TOKEN_ADDRESS`
+- `DEVNET_TOKEN_DECIMALS`
+- `DEVNET_TOKEN_SYMBOL`
+
 ## Safety Notes
 
 - Live transfer refuses to run without `--yes`.
